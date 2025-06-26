@@ -1,0 +1,94 @@
+use ic_cdk::api::call::ManualReply;
+use ic_cdk::export::candid::{candid_method, Principal};
+use ic_cdk::storage;
+use ic_cdk_macros::*;
+use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
+use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap};
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+type Memory = VirtualMemory<DefaultMemoryImpl>;
+
+thread_local! {
+    static MEMORY_MANAGER: RefCell<MemoryManager<DefaultMemoryImpl>> =
+        RefCell::new(MemoryManager::init(DefaultMemoryImpl::default()));
+    
+    static BALANCES: RefCell<StableBTreeMap<Principal, u64, Memory>> = RefCell::new(
+        StableBTreeMap::init(
+            MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(0)))
+        )
+    );
+    
+    static ADMIN: RefCell<Principal> = RefCell::new(Principal::anonymous());
+}
+
+#[init]
+#[candid_method(init)]
+fn init(admin: Principal) {
+    ADMIN.with(|a| *a.borrow_mut() = admin);
+}
+
+#[update]
+#[candid_method(update)]
+fn mint(to: Principal, amount: u64) -> Result<(), String> {
+    let caller = ic_cdk::caller();
+    ADMIN.with(|admin| {
+        if caller != *admin.borrow() {
+            return Err("Only admin can mint tokens".to_string());
+        }
+        BALANCES.with(|balances| {
+            let mut balances = balances.borrow_mut();
+            let current_balance = balances.get(&to).unwrap_or(0);
+            balances.insert(to, current_balance + amount);
+            Ok(())
+        })
+    })
+}
+
+#[update]
+#[candid_method(update)]
+fn transfer(to: Principal, amount: u64) -> Result<(), String> {
+    let caller = ic_cdk::caller();
+    BALANCES.with(|balances| {
+        let mut balances = balances.borrow_mut();
+        let sender_balance = balances.get(&caller).unwrap_or(0);
+        if sender_balance < amount {
+            return Err("Insufficient balance".to_string());
+        }
+        balances.insert(caller, sender_balance - amount);
+        let recipient_balance = balances.get(&to).unwrap_or(0);
+        balances.insert(to, recipient_balance + amount);
+        Ok(())
+    })
+}
+
+#[update]
+#[candid_method(update)]
+fn burn(from: Principal, amount: u64) -> Result<(), String> {
+    let caller = ic_cdk::caller();
+    ADMIN.with(|admin| {
+        if caller != *admin.borrow() {
+            return Err("Only admin can burn tokens".to_string());
+        }
+        BALANCES.with(|balances| {
+            let mut balances = balances.borrow_mut();
+            let current_balance = balances.get(&from).unwrap_or(0);
+            if current_balance < amount {
+                return Err("Insufficient balance to burn".to_string());
+            }
+            balances.insert(from, current_balance - amount);
+            Ok(())
+        })
+    })
+}
+
+#[query]
+#[candid_method(query)]
+fn balance_of(account: Principal) -> u64 {
+    BALANCES.with(|balances| balances.borrow().get(&account).unwrap_or(0))
+}
+
+#[export_name = "canister_query get_candid"]
+fn get_candid() {
+    ic_cdk::export_candid!();
+}
