@@ -1,0 +1,8 @@
+# Исключение временных файлов и сборки
+target/
+.dfx/
+.git/
+*.zip
+node_modules/
+*.wasm
+*.did
