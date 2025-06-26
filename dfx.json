@@ -1,0 +1,14 @@
+{
+  "canisters": {
+    "stablecoin_prototype": {
+      "main": "src/stablecoin_prototype/main.rs",
+      "type": "rust"
+    }
+  },
+  "defaults": {
+    "build": {
+      "packtool": "cargo"
+    }
+  },
+  "version": 1
+}
